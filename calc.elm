@@ -6,6 +6,7 @@ import Html.Events exposing (onClick, onInput)
 import String exposing (..)
 import List exposing (..)
 import Debug exposing (..)
+import Regex
 
 
 main =
@@ -70,10 +71,10 @@ calcRes : Model -> String
 calcRes input =
     let
         parts =
-            String.split " " input
+            parse input
 
         log =
-            Debug.log "" input
+            Debug.log "" parts
 
         a =
             List.head parts
@@ -107,6 +108,21 @@ calcRes input =
                 "Err"
 
 
+parse : String -> List String
+parse s =
+    let
+        nums =
+            Regex.split Regex.All (Regex.regex "[+*\\-/]") s
+
+        op =
+            Regex.find (Regex.AtMost 1) (Regex.regex "[+*\\-/]") s
+                |> List.map .match
+                |> List.head
+                |> Maybe.withDefault "Unknown"
+    in
+        List.intersperse op nums
+
+
 maybeStringToInt : Maybe String -> Int
 maybeStringToInt value =
     Maybe.withDefault "0" value
@@ -138,7 +154,7 @@ view model =
     table []
         [ tr []
             [ td [ colspan 5 ]
-                [ input [ onInput Input ] []
+                [ input [ value model, onInput Input ] []
                 ]
             ]
         , tr []
