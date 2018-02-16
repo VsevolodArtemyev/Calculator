@@ -1,0 +1,23 @@
+{
+  "name": "awesome-calculator",
+  "version": "0.0.1",
+  "description": "Awesome Calculator",
+  "main": "index.js",
+  "dependencies": {
+    "css-loader": "^0.28.9",
+    "elm": "^0.18.0",
+    "elm-webpack-loader": "^4.4.0",
+    "file-loader": "^1.1.6",
+    "style-loader": "^0.20.2",
+    "url-loader": "^0.6.2",
+    "webpack": "^3.11.0",
+    "webpack-dev-server": "^2.11.1"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "build": "./node_modules/webpack/bin/webpack.js",
+    "start": "./node_modules/webpack-dev-server/bin/webpack-dev-server.js --port 3000"
+  },
+  "author": "vartemiev",
+  "license": "ISC"
+}
