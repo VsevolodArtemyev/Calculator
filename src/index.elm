@@ -30,12 +30,13 @@ type Operation
 
 type alias Model =
   { display : String
-  , legitOperationsMatrix : List (List Operation)
   , isArithmeticLast : Bool
+  , isUnaryMinusLast : Bool
+  , canAddDot : Bool
   }
 
 init : (Model, Cmd Msg)
-init = (Model "0" (List.singleton [Dot, Clear]) False, Cmd.none)
+init = (Model "0" False False False, Cmd.none)
 
 -- UPDATE
 getOperator : String -> (Float -> Float -> Float)
@@ -46,46 +47,26 @@ getOperator op =
     "×" -> (*)
     _ -> (/)
 
-updateLegitMatrix : List Operation -> List Operation -> List (List Operation) -> List (List Operation)
-updateLegitMatrix additional removable legitMatrix =
-  let
-    newLegitList =
-      legitMatrix
-      |> List.head
-      |> Maybe.withDefault []
-      |> List.filter (\op -> not (List.member op additional))
-      |> List.filter (\op -> not (List.member op removable))
-      |> List.append additional
-   
-  in
-    newLegitList :: legitMatrix
-
 isLastNumberZero : String -> Bool
 isLastNumberZero expression =
   (String.right 2 expression == " 0") || (String.right 1 expression == "0" && String.length expression == 1)
 
-addDigit : Model -> Float -> Model
-addDigit model value =
+addDigit : Float -> Model -> Model
+addDigit value model =
   { model
   | display = model.display ++ (toString value)
-  , legitOperationsMatrix = updateLegitMatrix [Add, Sub, Mul, Div, Eval] [] model.legitOperationsMatrix
   , isArithmeticLast = False
+  , isUnaryMinusLast = False
   }
 
-replaceZeroByDigit : Model -> Float -> Model
-replaceZeroByDigit model value =
-  let
-    newModel =
-      { model
-      | display = String.dropRight 1 model.display
-      , legitOperationsMatrix = List.drop 1 model.legitOperationsMatrix
-      }
-
-  in
-    addDigit newModel value
+replaceZeroByDigit : Float -> Model -> Model
+replaceZeroByDigit value model =
+  { model | display = String.dropRight 1 model.display }
+  |> addDigit value
 
 
-eval model =
+evaluateExpression : Model -> Model
+evaluateExpression model =
   let
     isOperator = (\op -> List.member op ["+", "-", "÷", "×", "_"])
 
@@ -124,54 +105,6 @@ eval model =
             }
 
 
-    result =
-      (model.display ++ " _")
-      |> String.split " "
-      |> List.foldl shapePolishNotation {operands = [], operators = []}
-      |> .operands
-      |> String.join ""
-  in
-    { model | display = result }
-
-
-
-evaluateExpression : Model -> Model
-evaluateExpression model =
-  let
-    isOperator = (\op -> List.member op ["+", "-", "÷", "×"])
-
-    shapePolishNotation op ac =
-      let
-        isLowerOrEqual = (\order -> List.member order [LT, EQ])
-        getLastOperator = (\stack -> List.head stack |> Maybe.withDefault "!")
-
-        getOperationRank = (\op ->
-          if List.member op ["+", "-"] then
-            1
-          else if List.member op ["×", "÷"] then
-            2
-          else
-            3
-        )
-
-        isPopPreviosOperator = (\stackOp
-          -> isLowerOrEqual
-          <| compare (getOperationRank stackOp)
-          <| getOperationRank op
-        )
-        
-      in
-        if not (isOperator op) then
-          { ac | operands = op :: ac.operands }
-        else
-          let
-            pulledOperators = List.filter isPopPreviosOperator ac.operators |> List.reverse
-            newOperatorsStack = ac.operators |> List.drop (List.length ac.operators)
-
-          in
-            { ac | operands = List.append pulledOperators ac.operands, operators = op :: newOperatorsStack }
-
-
     listToTuple list =
       let
         a = List.head list |> Result.fromMaybe "Error" |> Result.andThen String.toFloat
@@ -185,7 +118,13 @@ evaluateExpression model =
         op :: stack
       else
         let
-          (op1, op2) = List.take 2 stack |> listToTuple
+          st = log "stack: " stack
+
+          (op2, op1) = List.take 2 stack |> listToTuple
+
+          deb = log "op1" op1
+          deb2 = log "op2" op2
+
           operator = getOperator op
 
           result = 
@@ -194,14 +133,13 @@ evaluateExpression model =
               Err err -> "Error"
 
         in
-          result :: stack
+          result :: (List.drop 2 stack)
 
     result =
-      model.display
+      (model.display ++ " _")
       |> String.split " "
-      |> List.foldr shapePolishNotation {operands = [], operators = []}
+      |> List.foldl shapePolishNotation {operands = [], operators = []}
       |> .operands
-      |> List.reverse
       |> List.foldr executePolishNotation []
       |> List.head
       |> Maybe.withDefault "Error"
@@ -222,95 +160,86 @@ update msg model =
   case msg of
     Press value ->
       if isLastNumberZero model.display then
-        (replaceZeroByDigit model value, Cmd.none)
+        (replaceZeroByDigit value model, Cmd.none)
       else
-        (addDigit model value, Cmd.none)
+        (addDigit value model, Cmd.none)
 
     Execute oper ->
-      if (List.member oper <| Maybe.withDefault [] <| List.head model.legitOperationsMatrix) then
-        case oper of
-          Add -> (
+      case oper of
+        Add ->
+          if model.isArithmeticLast then
+            { model | }
+
+        Sub -> 
+          let
+            updateLegitMatrixBy = model.isArithmeticLast ?
+              updateLegitMatrix [Dot] [Add, Sub, Mul, Div, Eval] <|
+              updateLegitMatrix [Dot, Sub] [Add, Mul, Div, Eval]
+
+            newValue = model.isArithmeticLast ? "-" <| " - "
+
+          in (
             Model
-              (model.display ++ " + ")
-              (updateLegitMatrix [Dot, Sub] [Add, Mul, Div, Eval] model.legitOperationsMatrix)
+              (model.display ++ newValue)
+              (updateLegitMatrixBy model.legitOperationsMatrix)
               True
 
             , Cmd.none
           )
 
-          Sub -> 
-            let
-              updateLegitMatrixBy = model.isArithmeticLast ?
-                updateLegitMatrix [Dot] [Add, Sub, Mul, Div, Eval] <|
-                updateLegitMatrix [Dot, Sub] [Add, Mul, Div, Eval]
+        Mul -> (
+          Model
+            (model.display ++ " × ")
+            (updateLegitMatrix [Dot, Sub] [Add, Mul, Div, Eval] model.legitOperationsMatrix)
+            True
 
-              newValue = model.isArithmeticLast ? "-" <| " - "
+          , Cmd.none
+        )
 
-            in (
+        Div -> (
+          Model
+            (model.display ++ " ÷ ")
+            (updateLegitMatrix [Dot, Sub] [Add, Mul, Div, Eval] model.legitOperationsMatrix)
+            True
+
+          , Cmd.none
+        )
+
+        Dot -> (
+          Model
+            (model.display ++ (model.isArithmeticLast ? "0." <| "."))
+            (updateLegitMatrix [] [Add, Sub, Mul, Div, Eval, Dot] model.legitOperationsMatrix)
+            False
+
+          , Cmd.none
+        )
+
+        Eval ->
+          (evaluateExpression model, Cmd.none)
+
+        Clear ->
+          case String.right 1 model.display of
+            " " -> (
               Model
-                (model.display ++ newValue)
-                (updateLegitMatrixBy model.legitOperationsMatrix)
-                True
+                (String.dropRight 3 model.display)
+                (List.drop 1 model.legitOperationsMatrix)
+                False
 
               , Cmd.none
             )
 
-          Mul -> (
-            Model
-              (model.display ++ " × ")
-              (updateLegitMatrix [Dot, Sub] [Add, Mul, Div, Eval] model.legitOperationsMatrix)
-              True
+            _ -> 
+              let
+                newDisplay = String.dropRight 1 model.display
 
-            , Cmd.none
-          )
-
-          Div -> (
-            Model
-              (model.display ++ " ÷ ")
-              (updateLegitMatrix [Dot, Sub] [Add, Mul, Div, Eval] model.legitOperationsMatrix)
-              True
-
-            , Cmd.none
-          )
-
-          Dot -> (
-            Model
-              (model.display ++ (model.isArithmeticLast ? "0." <| "."))
-              (updateLegitMatrix [] [Add, Sub, Mul, Div, Eval, Dot] model.legitOperationsMatrix)
-              False
-
-            , Cmd.none
-          )
-
-          Eval ->
-            (eval model, Cmd.none)
-
-          Clear ->
-            case String.right 1 model.display of
-              " " -> (
+              in (
                 Model
-                  (String.dropRight 3 model.display)
+                  newDisplay
                   (List.drop 1 model.legitOperationsMatrix)
-                  False
+                  (String.right 1 newDisplay == " ")
 
                 , Cmd.none
               )
-
-              _ -> 
-                let
-                  newDisplay = String.dropRight 1 model.display
-
-                in (
-                  Model
-                    newDisplay
-                    (List.drop 1 model.legitOperationsMatrix)
-                    (String.right 1 newDisplay == " ")
-
-                  , Cmd.none
-                )
-
-      else
-        (model, Cmd.none)
 
 -- SUBSCRIPTIONS
 
